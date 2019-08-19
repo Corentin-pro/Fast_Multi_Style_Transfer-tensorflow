@@ -8,7 +8,7 @@ def conv_layer(net, num_filters, filter_size, strides, style_control=None, relu=
         weights_init = tf.get_variable(name, shape=weights_shape, initializer=tf.truncated_normal_initializer(stddev=.01))
         strides_shape = [1, strides, strides, 1]
 
-        p = (filter_size - 1) / 2
+        p = (filter_size - 1) // 2
         if strides == 1:
             net = tf.pad(net, [[0, 0], [p, p], [p, p], [0, 0]], "REFLECT")
             net = tf.nn.conv2d(net, weights_init, strides_shape, padding="VALID")
@@ -22,7 +22,8 @@ def conv_layer(net, num_filters, filter_size, strides, style_control=None, relu=
     return net
 
 
-def conv_tranpose_layer(net, num_filters, filter_size, strides, style_control=None, name='conv_t'):
+def conv_tranpose_layer(net, num_filters, filter_size, strides, style_control=None, name='conv_t',
+                        engine=False):
     with tf.variable_scope(name):
         b, w, h, c = net.get_shape().as_list()
         weights_shape = [filter_size, filter_size, num_filters, c]
@@ -32,11 +33,13 @@ def conv_tranpose_layer(net, num_filters, filter_size, strides, style_control=No
         new_rows, new_cols = int(rows * strides), int(cols * strides)
         # new_shape = #tf.pack([tf.shape(net)[0], new_rows, new_cols, num_filters])
 
+        if engine:
+            batch_size = tf.shape(net)[0]
         new_shape = [batch_size, new_rows, new_cols, num_filters]
         tf_shape = tf.stack(new_shape)
         strides_shape = [1,strides,strides,1]
 
-        p = (filter_size - 1) / 2
+        p = (filter_size - 1) // 2
         if strides == 1:
             net = tf.pad(net, [[0, 0], [p, p], [p, p], [0, 0]], "REFLECT")
             net = tf.nn.conv2d_transpose(net, weights_init, tf_shape, strides_shape, padding="VALID")
@@ -73,8 +76,20 @@ def conditional_instance_norm(net, style_control=None, name='cond_in'):
 
         idx = [i for i, x in enumerate(style_control) if not x == 0]
 
-        style_scale = reduce(tf.add, [scale[i]*style_control[i] for i in idx]) / sum(style_control)
-        style_shift = reduce(tf.add, [shift[i]*style_control[i] for i in idx]) / sum(style_control)
+        style_scale = None
+        style_shift = None
+        for i in idx:
+            if style_scale is None:
+                style_scale = scale[i] * style_control[i]
+            else:
+                style_scale = tf.add(style_scale, scale[i] * style_control[i])
+            if style_shift is None:
+                style_shift = shift[i] * style_control[i]
+            else:
+                style_shift = tf.add(style_shift, shift[i] * style_control[i])
+        style_scale = style_scale / sum(style_control)
+        style_shift = style_shift / sum(style_control)
+
         output = style_scale * normalized + style_shift
 
     return output

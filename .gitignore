@@ -1,1 +1,4 @@
-src/*.pyc
+*.pyc
+*.mat
+
+MST
