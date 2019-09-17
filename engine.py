@@ -7,23 +7,35 @@ from src.layers import conv_layer, conv_tranpose_layer, pooling, residual_block
 
 
 class Engine:
-    def __init__(self, tf_session: tf.Session, style_control: list,
-                 content_data_size: int, checkpoint_path: str):
+    def __init__(self, tf_session: tf1.Session, content_data_size: int, checkpoint_path: str,
+                 style_control=None, resize=None):
         self.tf_session = tf_session
         self.content_data_szie = content_data_size
         self.checkpoint_path = checkpoint_path
-        self.style_control = style_control
 
         self.image_placeholder = tf1.placeholder(
-            tf.float32, shape=[None, content_data_size, content_data_size, 3], name='img')
+            tf.uint8, shape=[None, content_data_size, content_data_size, 3], name='img')
+        self.style_placeholder = tf1.placeholder(
+            tf.float32, shape=[16])
 
-        self.network = self.mst_net(self.image_placeholder, style_control=style_control)
+        self.style_control = style_control
+        self.network = self.mst_net(
+            tf.cast(self.image_placeholder, tf.float32),
+            style_control=self.style_placeholder if style_control is None else self.style_control)
+        # self.output = tf.minimum(tf.maximum(self.network, 0), 255)
+        self.output = self.network
 
-        self.saver = tf1.train.Saver(var_list=tf.trainable_variables())
+        if resize:
+            self.output = tf1.image.resize_bilinear(self.output, (resize, resize))
+        self.output = tf.cast(self.output, tf.uint8)
+
+        # train_writer = tf.compat.v1.summary.FileWriter('engine', self.tf_session.graph, flush_secs=20)
+
+        self.saver = tf1.train.Saver(var_list=tf1.trainable_variables())
         self.saver.restore(self.tf_session, self.checkpoint_path)
 
     def mst_net(self, x, style_control=None, reuse=False):
-        with tf.variable_scope(tf.get_variable_scope(), reuse=reuse):
+        with tf1.variable_scope(tf1.get_variable_scope(), reuse=reuse):
             # batch_size, height, width, channels = x.get_shape().as_list()
 
             x = conv_layer(x, 32, 9, 1, style_control=style_control, name='conv1')
@@ -41,11 +53,17 @@ class Engine:
                                     engine=True)
             x = pooling(x)
             x = conv_layer(x, 3, 9, 1, relu=False, style_control=style_control, name='output')
-            preds = tf.nn.tanh(x) * 150 + 255. / 2
+            preds = tf.nn.tanh(x) * 127 + 128
         return preds
 
-    def predict(self, images):
-        return self.tf_session.run(self.network, feed_dict={self.image_placeholder: images})
+    def predict(self, images, style_control=None):
+        if style_control is None:
+            return self.tf_session.run(
+                self.output, feed_dict={self.image_placeholder: images})
+        return self.tf_session.run(
+            self.output, feed_dict={
+                self.image_placeholder: images,
+                self.style_placeholder: style_control})
 
 
 def main():
@@ -60,7 +78,8 @@ def main():
     parser.add_argument('checkpoint_path', help='Path to checkpoint to load')
     parser.add_argument('--style', nargs='+',
                         default=[1.] * 16, help='List of weights for style')
-    parser.add_argument('--input_size', type=int, default=256, help='Shape of input to use (depends on checkpoint)')
+    parser.add_argument('--input-size', type=int, default=256, help='Shape of input to use (depends on checkpoint)')
+    parser.add_argument('--output-size', type=int, default=None, help='Shape of output image')
     arguments = parser.parse_args()
 
     style_control = [float(value) for value in arguments.style]
@@ -73,19 +92,19 @@ def main():
     session_config = tf1.ConfigProto(gpu_options=gpu_options)
 
     with tf1.Session(config=session_config).as_default() as session:
-        engine = Engine(session, style_control, arguments.input_size, arguments.checkpoint_path)
+        engine = Engine(session, arguments.input_size, arguments.checkpoint_path, resize=arguments.output_size)
 
-        output = engine.predict([input_image])[0]
+        output = engine.predict([input_image], style_control)[0]
 
         start_time = time.time()
         prediction_count = 30
         for _ in range(prediction_count):
-            output = engine.predict([input_image])[0]
+            output = engine.predict([input_image], style_control)[0]
         time_spent = time.time() - start_time
         print('{} predictions in {:.03f}s => {}FPS'.format(
             prediction_count, time_spent, prediction_count / time_spent))
 
-        Image.fromarray(output.astype(np.uint8)).save('output.png')
+        Image.fromarray(output).save('output.png')
 
 
 if __name__ == '__main__':
