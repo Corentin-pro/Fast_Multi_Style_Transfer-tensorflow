@@ -63,6 +63,9 @@ class op(object):
         except:
             self.sess.run(tf.global_variables_initializer())
 
+        # train_writer = tf.compat.v1.summary.FileWriter(
+        #     os.path.join(self.ckpt_dir, 'train'), self.sess.graph, flush_secs=20)
+
         for epoch in range(self.niter):
             batch_idxs = len(data) // self.batch_size
 
