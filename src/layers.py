@@ -70,6 +70,7 @@ def conditional_instance_norm(net, style_control=None, name='cond_in'):
         shift = []
         scale = []
 
+        # Hard coded style
         if isinstance(style_control, list):
             for i in range(len(style_control)):
                 with tf1.variable_scope('{0}'.format(i) + '_style'):
@@ -95,7 +96,8 @@ def conditional_instance_norm(net, style_control=None, name='cond_in'):
             style_shift = style_shift / sum(style_control)
 
             output = style_scale * normalized + style_shift
-        else:
+        # Single style per batch
+        elif style_control.shape.as_list()[0] is not None:
             strided_style = tf.unstack(style_control)
             for i in range(style_control.shape.as_list()[0]):
                 with tf1.variable_scope('{0}'.format(i) + '_style'):
@@ -109,8 +111,34 @@ def conditional_instance_norm(net, style_control=None, name='cond_in'):
             style_shifts = tf.stack(shift)
             style_scales = tf.stack(scale)
 
-            style_shift = tf.reduce_sum(style_shifts, axis=0) / tf.reduce_sum(style_control)
-            style_scale = tf.reduce_sum(style_scales, axis=0) / tf.reduce_sum(style_control)
+            style_shift = tf.reduce_sum(style_shifts, axis=0) / tf.reduce_sum(style_control, axis=0)
+            style_scale = tf.reduce_sum(style_scales, axis=0) / tf.reduce_sum(style_control, axis=0)
+            output = style_scale * normalized + style_shift
+        # Multi style
+        else:
+            strided_style = tf.unstack(style_control, axis=1)
+            style_count = style_control.shape.as_list()[1]
+            for i in range(style_count):
+                with tf1.variable_scope('{0}'.format(i) + '_style'):
+                    style_shift = tf1.get_variable('shift', shape=var_shape, initializer=tf.constant_initializer(0.))
+                    channel_count = style_shift.shape.as_list()[0]
+                    batch_control = tf.broadcast_to(
+                        tf.ones(channel_count),
+                        [tf.shape(style_control)[0], channel_count]) * tf.expand_dims(strided_style[i], 1)
+                    shift.append(style_shift * batch_control)
+
+                    style_scale = tf1.get_variable('scale', shape=var_shape, initializer=tf.constant_initializer(1.))
+                    scale.append(style_scale * batch_control)
+            epsilon = 1e-3
+            normalized = tf.subtract(net, mu) / tf.sqrt(sigma_sq + epsilon)
+
+            style_shifts = tf.stack(shift)
+            style_scales = tf.stack(scale)
+
+            style_shift = tf.expand_dims(tf.expand_dims(
+                tf.reduce_sum(style_shifts, axis=0) / tf.reduce_sum(style_control, axis=1, keepdims=True), axis=1), axis=1)
+            style_scale = tf.expand_dims(tf.expand_dims(
+                tf.reduce_sum(style_scales, axis=0) / tf.reduce_sum(style_control, axis=1, keepdims=True), axis=1), axis=1)
             output = style_scale * normalized + style_shift
 
     return output
