@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 import tensorflow.compat.v1 as tf1
 
@@ -67,37 +68,81 @@ def conditional_instance_norm(net, style_control=None, name='cond_in'):
         mu, sigma_sq = tf.nn.moments(net, [1, 2], keep_dims=True)
 
         var_shape = [channels]
-        shift = []
-        scale = []
 
         # Hard coded style
-        if isinstance(style_control, list):
-            for i in range(len(style_control)):
-                with tf1.variable_scope('{0}'.format(i) + '_style'):
-                    shift.append(tf1.get_variable('shift', shape=var_shape, initializer=tf.constant_initializer(0.)))
-                    scale.append(tf1.get_variable('scale', shape=var_shape, initializer=tf.constant_initializer(1.)))
-            epsilon = 1e-3
-            normalized = tf.subtract(net, mu) / tf.sqrt(sigma_sq + epsilon)
+        if isinstance(style_control, (list, np.ndarray)):
+            shift = {}
+            scale = {}
+            # Single style per batch
+            if len(np.asarray(style_control).shape) == 1:
+                for style_index, style_weight in enumerate(style_control):
+                    if style_weight == 0 or style_index in shift:
+                        continue
+                    with tf1.variable_scope('{0}'.format(style_index) + '_style'):
+                        shift[style_index] = tf1.get_variable(
+                            'shift', shape=var_shape, initializer=tf.constant_initializer(0.))
+                        scale[style_index] = tf1.get_variable(
+                            'scale', shape=var_shape, initializer=tf.constant_initializer(1.))
+                epsilon = 1e-3
+                normalized = tf.subtract(net, mu) / tf.sqrt(sigma_sq + epsilon)
 
-            idx = [i for i, x in enumerate(style_control) if not x == 0]
 
-            style_scale = None
-            style_shift = None
-            for i in idx:
-                if style_scale is None:
-                    style_scale = scale[i] * style_control[i]
-                else:
-                    style_scale = tf.add(style_scale, scale[i] * style_control[i])
-                if style_shift is None:
-                    style_shift = shift[i] * style_control[i]
-                else:
-                    style_shift = tf.add(style_shift, shift[i] * style_control[i])
-            style_scale = style_scale / sum(style_control)
-            style_shift = style_shift / sum(style_control)
+                style_scale = None
+                style_shift = None
+                for style_index, style_weight in enumerate(style_control):
+                    if style_weight == 0:
+                        continue
+                    if style_scale is None:
+                        style_scale = scale[style_index] * style_weight
+                    else:
+                        style_scale = tf.add(style_scale, scale[style_index] * style_weight)
+                    if style_shift is None:
+                        style_shift = shift[style_index] * style_weight
+                    else:
+                        style_shift = tf.add(style_shift, shift[style_index] * style_weight)
+                style_scale = style_scale / sum(style_control)
+                style_shift = style_shift / sum(style_control)
 
-            output = style_scale * normalized + style_shift
+                output = style_scale * normalized + style_shift
+            else:  # Multiple style per batch
+                for batch_index, batch_style in enumerate(style_control):
+                    for style_index, style_weight in enumerate(batch_style):
+                        if style_weight == 0 or style_index in shift:
+                            continue
+                        with tf1.variable_scope('{0}'.format(style_index) + '_style'):
+                            shift[style_index] = tf1.get_variable(
+                                'shift', shape=var_shape, initializer=tf.constant_initializer(0.))
+                            scale[style_index] = tf1.get_variable(
+                                'scale', shape=var_shape, initializer=tf.constant_initializer(1.))
+                epsilon = 1e-3
+                normalized = tf.subtract(net, mu) / tf.sqrt(sigma_sq + epsilon)
+
+                style_scales = []
+                style_shifts = []
+                for batch_index, batch_style in enumerate(style_control):
+                    style_scale = None
+                    style_shift = None
+                    for style_index, style_weight in enumerate(batch_style):
+                        if style_weight == 0:
+                            continue
+                        if style_scale is None:
+                            style_scale = scale[style_index] * style_weight
+                        else:
+                            style_scale = tf.add(style_scale, scale[style_index] * style_weight)
+                        if style_shift is None:
+                            style_shift = shift[style_index] * style_weight
+                        else:
+                            style_shift = tf.add(style_shift, shift[style_index] * style_weight)
+                    style_scales.append(style_scale / sum(style_control[batch_index]))
+                    style_shifts.append(style_shift / sum(style_control[batch_index]))
+
+                style_scales = tf.expand_dims(tf.expand_dims(tf.stack(style_scales), axis=1), axis=1)
+                style_shifts = tf.expand_dims(tf.expand_dims(tf.stack(style_shifts), axis=1), axis=1)
+                output = style_scales * normalized + style_shifts
         # Single style per batch
         elif style_control.shape.as_list()[0] is not None:
+            shift = []
+            scale = []
             strided_style = tf.unstack(style_control)
             for i in range(style_control.shape.as_list()[0]):
                 with tf1.variable_scope('{0}'.format(i) + '_style'):
@@ -116,6 +161,8 @@ def conditional_instance_norm(net, style_control=None, name='cond_in'):
             output = style_scale * normalized + style_shift
         # Multi style
         else:
+            shift = []
+            scale = []
             strided_style = tf.unstack(style_control, axis=1)
             style_count = style_control.shape.as_list()[1]
             for i in range(style_count):
@@ -136,9 +183,11 @@ def conditional_instance_norm(net, style_control=None, name='cond_in'):
             style_scales = tf.stack(scale)
 
             style_shift = tf.expand_dims(tf.expand_dims(
-                tf.reduce_sum(style_shifts, axis=0) / tf.reduce_sum(style_control, axis=1, keepdims=True), axis=1), axis=1)
+                tf.reduce_sum(style_shifts, axis=0) / tf.reduce_sum(style_control, axis=1, keepdims=True),
+                axis=1), axis=1)
             style_scale = tf.expand_dims(tf.expand_dims(
-                tf.reduce_sum(style_scales, axis=0) / tf.reduce_sum(style_control, axis=1, keepdims=True), axis=1), axis=1)
+                tf.reduce_sum(style_scales, axis=0) / tf.reduce_sum(style_control, axis=1, keepdims=True),
+                axis=1), axis=1)
             output = style_scale * normalized + style_shift
 
     return output

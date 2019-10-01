@@ -1,5 +1,3 @@
-import os
-
 import tensorflow as tf
 import tensorflow.compat.v1 as tf1
 
@@ -8,19 +6,20 @@ from src.layers import conv_layer, conv_tranpose_layer, pooling, residual_block
 
 class EngineMultiStyle:
     def __init__(self, tf_session: tf1.Session, content_data_size: int, checkpoint_path: str,
-                 resize=None):
+                 style_control=None, resize=None):
         self.tf_session = tf_session
         self.content_data_szie = content_data_size
         self.checkpoint_path = checkpoint_path
 
         self.image_placeholder = tf1.placeholder(
-            tf.uint8, shape=[None, content_data_size, content_data_size, 3], name='img')
+            tf.uint8, shape=[None if style_control is None else len(style_control), content_data_size, content_data_size, 3], name='img')
         self.style_placeholder = tf1.placeholder(
-            tf.float32, shape=[None, 16], name='style_placeholder')
+            tf.float32, shape=[None, 16], name='style_placeholder') if style_control is None else None
+        self.style_control = style_control
 
         self.network = self.mst_net(
             tf.cast(self.image_placeholder, tf.float32),
-            style_control=self.style_placeholder)
+            style_control=self.style_placeholder if style_control is None else self.style_control)
         # self.output = tf.minimum(tf.maximum(self.network, 0), 255)
         self.output = self.network
 
@@ -64,6 +63,7 @@ class EngineMultiStyle:
                 self.image_placeholder: images,
                 self.style_placeholder: style_control})
 
+
 def main():
     import argparse
     import time
@@ -79,9 +79,10 @@ def main():
                         default=[1.] * 16, help='List of weights for style')
     parser.add_argument('--input-size', type=int, default=256, help='Shape of input to use (depends on checkpoint)')
     parser.add_argument('--output-size', type=int, default=None, help='Shape of output image')
+    parser.add_argument('--dynamic_style', action='store_true', help='Use dynamic style control')
     arguments = parser.parse_args()
 
-    style_control = np.asarray([[float(value) for value in arguments.style] for _ in range( arguments.batch_size)])
+    style_control = np.asarray([[float(value) for value in arguments.style] for _ in range(arguments.batch_size)])
 
     input_image = Image.open(arguments.input_image).convert('RGB')
     input_image = input_image.resize((arguments.input_size, arguments.input_size))
@@ -92,14 +93,27 @@ def main():
     session_config = tf1.ConfigProto(gpu_options=gpu_options)
 
     with tf1.Session(config=session_config).as_default() as session:
-        engine = EngineMultiStyle(session, arguments.input_size, arguments.checkpoint_path, resize=arguments.output_size)
-        output = engine.predict(input_image, style_control=style_control)[0]
-
-        start_time = time.time()
-        prediction_count = 30
-        for _ in range(prediction_count):
+        if arguments.dynamic_style:
+            engine = EngineMultiStyle(
+                session, arguments.input_size, arguments.checkpoint_path, resize=arguments.output_size)
             output = engine.predict(input_image, style_control=style_control)[0]
-        time_spent = time.time() - start_time
+
+            start_time = time.time()
+            prediction_count = 30
+            for _ in range(prediction_count):
+                output = engine.predict(input_image, style_control=style_control)[0]
+            time_spent = time.time() - start_time
+        else:
+            engine = EngineMultiStyle(
+                session, arguments.input_size, arguments.checkpoint_path,
+                style_control=style_control, resize=arguments.output_size)
+            output = engine.predict(input_image)[0]
+
+            start_time = time.time()
+            prediction_count = 30
+            for _ in range(prediction_count):
+                output = engine.predict(input_image)[0]
+            time_spent = time.time() - start_time
 
         print('{} predictions in {:.03f}s => {:.02f}FPS ({:.02f} batch/s)'.format(
             prediction_count, time_spent,
