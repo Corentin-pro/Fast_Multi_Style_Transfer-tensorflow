@@ -11,7 +11,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('checkpoint_path', help='Path to checkpoint to load')
     parser.add_argument('--input-size', type=int, default=256, help='Shape of input to use (depends on checkpoint)')
-    parser.add_argument('--inter', nargs='+', type=int, default=256, help='Interpolate between the 4 style given')
+    parser.add_argument('--inter', nargs='+', type=int, help='Interpolate between the 4 style given')
     arguments = parser.parse_args()
 
     style_control = []
@@ -38,6 +38,10 @@ def main():
     capture = cv2.VideoCapture(-1)
 
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    import tensorflow as tf
+    if tf.__version__.split('.')[0] == '2':
+        import tensorflow.compat.v1 as tf
+        tf.disable_v2_behavior()
     import tensorflow.compat.v1 as tf1
     from engine_multi import EngineMultiStyle
 

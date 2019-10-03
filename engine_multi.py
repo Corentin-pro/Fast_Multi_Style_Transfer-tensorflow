@@ -1,4 +1,7 @@
 import tensorflow as tf
+if tf.__version__.split('.')[0] == '2':
+    import tensorflow.compat.v1 as tf
+    tf.disable_v2_behavior()
 import tensorflow.compat.v1 as tf1
 
 from src.layers import conv_layer, conv_tranpose_layer, pooling, residual_block
@@ -27,7 +30,7 @@ class EngineMultiStyle:
             self.output = tf1.image.resize_bilinear(self.output, (resize, resize))
         self.output = tf.cast(self.output, tf.uint8)
 
-        # train_writer = tf.compat.v1.summary.FileWriter('engine', self.tf_session.graph, flush_secs=20)
+        train_writer = tf.summary.FileWriter('engine', self.tf_session.graph, flush_secs=20)
 
         self.saver = tf1.train.Saver(var_list=tf1.trainable_variables())
         self.saver.restore(self.tf_session, self.checkpoint_path)

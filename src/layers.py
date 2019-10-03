@@ -1,5 +1,7 @@
 import numpy as np
 import tensorflow as tf
+if tf.__version__.split('.')[0] == '2':
+    import tensorflow.compat.v1 as tf
 import tensorflow.compat.v1 as tf1
 
 

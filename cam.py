@@ -32,6 +32,9 @@ def main():
 
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     import tensorflow as tf
+    if tf.__version__.split('.')[0] == '2':
+        import tensorflow.compat.v1 as tf
+        tf.disable_v2_behavior()
     import tensorflow.compat.v1 as tf1
     from engine import Engine
 

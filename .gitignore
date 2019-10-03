@@ -1,4 +1,8 @@
 *.pyc
 *.mat
+*.png
+*.jpg
 
 MST
+engine
+models
