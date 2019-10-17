@@ -13,14 +13,14 @@ def main():
     parser.add_argument("-p", "--project", type=str, default="mst")
 
     ## Train images
-    parser.add_argument("-ctd", "--content_dataset", type=str, default="/mnt/cloud/Data/COCO/all")
+    parser.add_argument("-ctd", "--content_dataset", type=str, default="coco/train2014")
     parser.add_argument("-cts", "--content_data_size", type=int, default=256)
     parser.add_argument("-sti", "--style_image", type=str, default="images/style/0_udnie.jpg")
 
     ## Train Iteration
     parser.add_argument("-n",  "--niter", type=int, default=2)
     parser.add_argument("-ns", "--nsnapshot", type=int, default=100)
-    parser.add_argument("-mx", "--max_to_keep", type=int, default=10)
+    parser.add_argument("-mx", "--max_to_keep", type=int, default=5)
 
     ## Train Parameter
     parser.add_argument("-b", "--batch_size", type=int, default=16)
@@ -35,7 +35,7 @@ def main():
 
 # Test #############################################################################################################
     parser.add_argument("-tsd", "--test_dataset", type=str, default="images/test")
-    parser.add_argument("-scw", "--style_control_weights", type=float, nargs=16)
+    parser.add_argument("-scw", "--style_control_weights", type=float, nargs='*')
 
     args = parser.parse_args()
     gpu_number = args.gpu_number
