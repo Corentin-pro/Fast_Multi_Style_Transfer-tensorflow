@@ -88,7 +88,6 @@ def conditional_instance_norm(net, style_control=None, name='cond_in'):
                 epsilon = 1e-3
                 normalized = tf.subtract(net, mu) / tf.sqrt(sigma_sq + epsilon)
 
-
                 style_scale = None
                 style_shift = None
                 for style_index, style_weight in enumerate(style_control):

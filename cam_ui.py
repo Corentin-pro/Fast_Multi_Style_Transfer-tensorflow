@@ -11,7 +11,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('checkpoint_path', help='Path to checkpoint to load')
     parser.add_argument('--input-size', type=int, default=256, help='Shape of input to use (depends on checkpoint)')
-    parser.add_argument('--style-count', type=int, default=16, help='Number of style')
     parser.add_argument('--inter', nargs='+', type=int, help='Interpolate between the 4 style given')
     arguments = parser.parse_args()
 
@@ -50,9 +49,7 @@ def main():
     session_config = tf1.ConfigProto(gpu_options=gpu_options)
     with tf1.Session(config=session_config).as_default() as session:
         input_size = arguments.input_size
-        engine = EngineMultiStyle(
-            session, input_size, arguments.checkpoint_path, style_count=arguments.style_count,
-            style_control=None, broadcast_style=len(style_control))
+        engine = EngineMultiStyle(session, input_size, arguments.checkpoint_path)
 
         mosaic = np.zeros((4 * input_size, 4 * input_size, 3), dtype=np.uint8)
         while(True):
@@ -62,7 +59,7 @@ def main():
             frame = cv2.resize(frame, (arguments.input_size, arguments.input_size))
             input_image = np.asarray(frame)
 
-            outputs = engine.predict(input_image, style_control)
+            outputs = engine.predict([input_image] * 16, style_control)
             for row in range(4):
                 for col in range(4):
                     mosaic[

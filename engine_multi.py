@@ -9,26 +9,67 @@ from src.layers import conv_layer, conv_tranpose_layer, pooling, residual_block
 
 class EngineMultiStyle:
     def __init__(self, tf_session: tf1.Session, content_data_size: int, checkpoint_path: str,
-                 style_control=None, resize=None):
+                 style_count=16, style_control=None, resize=None, broadcast_style=None, hidden_out=False):
         self.tf_session = tf_session
         self.content_data_szie = content_data_size
         self.checkpoint_path = checkpoint_path
 
-        self.image_placeholder = tf1.placeholder(
-            tf.uint8, shape=[None if style_control is None else len(style_control), content_data_size, content_data_size, 3], name='img')
-        self.style_placeholder = tf1.placeholder(
-            tf.float32, shape=[None, 16], name='style_placeholder') if style_control is None else None
+        if broadcast_style is not None:
+            self.image_placeholder = tf1.placeholder(
+                tf.uint8, shape=[content_data_size, content_data_size, 3],
+                name='image_placeholder')
+            image_input = tf.broadcast_to(
+                self.image_placeholder,
+                [broadcast_style, content_data_size, content_data_size, 3])
+            self.style_placeholder = tf1.placeholder(
+                tf.float32, shape=[None, style_count], name='style_placeholder')
+        elif style_control is None:
+            self.image_placeholder = tf1.placeholder(
+                tf.uint8, shape=[None, content_data_size, content_data_size, 3],
+                name='image_placeholder')
+            image_input = self.image_placeholder
+            self.style_placeholder = tf1.placeholder(
+                tf.float32, shape=[None, style_count], name='style_placeholder')
+        else:
+            self.image_placeholder = tf1.placeholder(
+                tf.uint8, shape=[len(style_control), content_data_size, content_data_size, 3], name='image_placeholder')
+            image_input = self.image_placeholder
+            self.style_placeholder = tf1.placeholder(
+                tf.float32, shape=[len(style_control), style_count], name='style_placeholder')
         self.style_control = style_control
 
         self.network = self.mst_net(
-            tf.cast(self.image_placeholder, tf.float32),
+            tf.cast(image_input, tf.float32),
             style_control=self.style_placeholder if style_control is None else self.style_control)
         # self.output = tf.minimum(tf.maximum(self.network, 0), 255)
         self.output = self.network
 
+        if hidden_out:
+            conv3 = tf_session.graph.get_tensor_by_name('conv3/Relu:0')[:1, :, :, :4]
+            conv3 = tf.nn.tanh(conv3)
+            # with tf.variable_scope('input_features_process'):
+            #     batch, width, height, channels = conv3.shape.as_list()
+            #     conv3 = tf.nn.softmax(tf.reshape(conv3, [batch, width * height, channels]), axis=1)
+            #     conv3 = tf.reshape(conv3, [batch, width, height, channels])
+            _ = tf.cast(conv3 * 255.0, tf.uint8, name='input_features')
+
+            res_conv3 = tf_session.graph.get_tensor_by_name('res3_a/conv/Relu:0')
+            _ = tf.nn.softmax(
+                tf.reshape(tf1.nn.avg_pool2d(res_conv3, 16, 16, 'VALID'), [5, 4 * 4 * 128]),
+                axis=-1,
+                name='latent')
+
+            res_conv5 = tf_session.graph.get_tensor_by_name('res5_b/add:0')[:1, :, :, :4]
+            res_conv5 = tf.nn.tanh(res_conv5)
+            # with tf.variable_scope('output_features_process'):
+            #     batch, width, height, channels = res_conv5.shape.as_list()
+            #     res_conv5 = tf.nn.softmax(tf.reshape(res_conv5, [batch, width * height, channels]), axis=1)
+            #     res_conv5 = tf.reshape(res_conv5, [batch, width, height, channels])
+            _ = tf.cast(res_conv5 * 255.0, tf.uint8, name='output_features')
+
         if resize:
             self.output = tf1.image.resize_bilinear(self.output, (resize, resize))
-        self.output = tf.cast(self.output, tf.uint8)
+        self.output = tf.cast(self.output, tf.uint8, name='output')
 
         # train_writer = tf.summary.FileWriter('engine', self.tf_session.graph, flush_secs=20)
 

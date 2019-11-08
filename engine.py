@@ -11,15 +11,15 @@ from src.layers import conv_layer, conv_tranpose_layer, pooling, residual_block
 
 class Engine:
     def __init__(self, tf_session: tf1.Session, content_data_size: int, checkpoint_path: str,
-                 style_control=None, resize=None):
+                 style_count=16, style_control=None, resize=None):
         self.tf_session = tf_session
         self.content_data_szie = content_data_size
         self.checkpoint_path = checkpoint_path
 
         self.image_placeholder = tf1.placeholder(
-            tf.uint8, shape=[None, content_data_size, content_data_size, 3], name='img')
+            tf.uint8, shape=[None, content_data_size, content_data_size, 3], name='image_placeholder')
         self.style_placeholder = tf1.placeholder(
-            tf.float32, shape=[16]) if style_control is None else None
+            tf.float32, shape=[style_count], name='style_placeholder') if style_control is None else None
 
         self.style_control = style_control
         self.network = self.mst_net(
@@ -32,7 +32,7 @@ class Engine:
             self.output = tf1.image.resize_bilinear(self.output, (resize, resize))
         self.output = tf.cast(self.output, tf.uint8)
 
-        # train_writer = tf.compat.v1.summary.FileWriter('engine', self.tf_session.graph, flush_secs=20)
+        # train_writer = tf.summary.FileWriter('engine', self.tf_session.graph, flush_secs=20)
 
         self.saver = tf1.train.Saver(var_list=tf1.trainable_variables())
         self.saver.restore(self.tf_session, self.checkpoint_path)
