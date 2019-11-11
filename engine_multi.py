@@ -45,13 +45,16 @@ class EngineMultiStyle:
         self.output = self.network
 
         if hidden_out:
-            conv3 = tf_session.graph.get_tensor_by_name('conv3/Relu:0')[:1, :, :, :4]
-            conv3 = tf.nn.tanh(conv3)
+            conv3 = tf_session.graph.get_tensor_by_name('conv3/Relu:0')[1:5, :, :, :3]
+            means, variances = tf.nn.moments(conv3, [0, 1, 2])
+            conv3 = tf.nn.batch_normalization(conv3, means, variances, 0.5, 1, 1e-6)
+            conv3 = tf.clip_by_value(conv3, 0, 1)
+            # conv3 = tf.nn.sigmoid(conv3)
             # with tf.variable_scope('input_features_process'):
             #     batch, width, height, channels = conv3.shape.as_list()
             #     conv3 = tf.nn.softmax(tf.reshape(conv3, [batch, width * height, channels]), axis=1)
             #     conv3 = tf.reshape(conv3, [batch, width, height, channels])
-            _ = tf.cast(conv3 * 255.0, tf.uint8, name='input_features')
+            _ = tf.cast(conv3 * 200.0, tf.uint8, name='input_features')
 
             res_conv3 = tf_session.graph.get_tensor_by_name('res3_a/conv/Relu:0')
             _ = tf.nn.softmax(
@@ -59,19 +62,19 @@ class EngineMultiStyle:
                 axis=-1,
                 name='latent')
 
-            res_conv5 = tf_session.graph.get_tensor_by_name('res5_b/add:0')[:1, :, :, :4]
-            res_conv5 = tf.nn.tanh(res_conv5)
+            res_conv5 = tf_session.graph.get_tensor_by_name('res5_b/add:0')[1:5, :, :, :3]
+            res_conv5 = tf.nn.sigmoid(res_conv5)
             # with tf.variable_scope('output_features_process'):
             #     batch, width, height, channels = res_conv5.shape.as_list()
             #     res_conv5 = tf.nn.softmax(tf.reshape(res_conv5, [batch, width * height, channels]), axis=1)
             #     res_conv5 = tf.reshape(res_conv5, [batch, width, height, channels])
-            _ = tf.cast(res_conv5 * 255.0, tf.uint8, name='output_features')
+            _ = tf.cast((1 - res_conv5) * 180.0, tf.uint8, name='output_features')
 
         if resize:
             self.output = tf1.image.resize_bilinear(self.output, (resize, resize))
         self.output = tf.cast(self.output, tf.uint8, name='output')
 
-        # train_writer = tf.summary.FileWriter('engine', self.tf_session.graph, flush_secs=20)
+        train_writer = tf.summary.FileWriter('engine', self.tf_session.graph, flush_secs=20)
 
         self.saver = tf1.train.Saver(var_list=tf1.trainable_variables())
         self.saver.restore(self.tf_session, self.checkpoint_path)
