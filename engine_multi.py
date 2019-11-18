@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 if tf.__version__.split('.')[0] == '2':
     import tensorflow.compat.v1 as tf
@@ -45,30 +46,32 @@ class EngineMultiStyle:
         self.output = self.network
 
         if hidden_out:
-            conv3 = tf_session.graph.get_tensor_by_name('conv3/Relu:0')[1:5, :, :, :3]
-            means, variances = tf.nn.moments(conv3, [0, 1, 2])
-            conv3 = tf.nn.batch_normalization(conv3, means, variances, 0.5, 1, 1e-6)
-            conv3 = tf.clip_by_value(conv3, 0, 1)
-            # conv3 = tf.nn.sigmoid(conv3)
-            # with tf.variable_scope('input_features_process'):
-            #     batch, width, height, channels = conv3.shape.as_list()
-            #     conv3 = tf.nn.softmax(tf.reshape(conv3, [batch, width * height, channels]), axis=1)
-            #     conv3 = tf.reshape(conv3, [batch, width, height, channels])
-            _ = tf.cast(conv3 * 200.0, tf.uint8, name='input_features')
+            def get_features(tensor_name: str, output_name: str, channel_count: int):
+                with tf.variable_scope('Normalization'):
+                    output = tf_session.graph.get_tensor_by_name(tensor_name)[1:5, :, :, :channel_count]
+                    means, variances = tf.nn.moments(output, [0, 1, 2])
+                    output = tf.nn.batch_normalization(output, means, variances, 0.5, 1, 1e-6)
+                    output = tf.clip_by_value(output, 0, 1)
+                return tf.cast(output * 200.0, tf.uint8, name=output_name)
 
-            res_conv3 = tf_session.graph.get_tensor_by_name('res3_a/conv/Relu:0')
-            _ = tf.nn.softmax(
-                tf.reshape(tf1.nn.avg_pool2d(res_conv3, 16, 16, 'VALID'), [5, 4 * 4 * 128]),
-                axis=-1,
-                name='latent')
+            get_features('conv3/Relu:0', 'input_features_1', 3)
+            get_features('res2_a/conv/Relu:0', 'input_features_2', 6)
 
-            res_conv5 = tf_session.graph.get_tensor_by_name('res5_b/add:0')[1:5, :, :, :3]
-            res_conv5 = tf.nn.sigmoid(res_conv5)
-            # with tf.variable_scope('output_features_process'):
-            #     batch, width, height, channels = res_conv5.shape.as_list()
-            #     res_conv5 = tf.nn.softmax(tf.reshape(res_conv5, [batch, width * height, channels]), axis=1)
-            #     res_conv5 = tf.reshape(res_conv5, [batch, width, height, channels])
-            _ = tf.cast((1 - res_conv5) * 180.0, tf.uint8, name='output_features')
+            with tf.variable_scope('Normalization'):
+                res_conv3 = tf_session.graph.get_tensor_by_name('res3_a/conv/Relu:0')
+                res_conv3 = tf.reshape(
+                    tf1.nn.avg_pool2d(res_conv3[:1], 10, 10, 'VALID'),
+                    [(6 * (content_data_size // 256)) * (6 * (content_data_size // 256)) * 128])
+                means, variances = tf.nn.moments(res_conv3, [0])
+                res_conv3 = tf.nn.batch_normalization(res_conv3, means, variances, 0.5, 1, 1e-6)
+                res_conv3 = tf.round(tf.clip_by_value(res_conv3, 0, 1))
+            res_conv3 = tf.cast(res_conv3, dtype=tf.int32, name='sub_latent')
+            prev_con3 = tf.placeholder(tf.int32, shape=res_conv3.shape, name='prev_latent')
+            res_conv3_change = tf.square(prev_con3 - res_conv3)
+            tf.cast(res_conv3_change, dtype=tf.uint8, name='latent_change')
+
+            get_features('res4_a/conv/Relu:0', 'output_features_1', 3)
+            get_features('res5_b/add:0', 'output_features_2', 6)
 
         if resize:
             self.output = tf1.image.resize_bilinear(self.output, (resize, resize))

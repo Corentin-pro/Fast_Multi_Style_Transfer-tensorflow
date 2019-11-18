@@ -27,7 +27,9 @@ def main():
 
         from tensorflow.python.framework.graph_util import convert_variables_to_constants
         trained_graph = convert_variables_to_constants(
-            session, session.graph_def, ['input_features', 'latent', 'output_features', 'output_1'])
+            session, session.graph_def,
+            ['input_features_1', 'input_features_2', 'latent_change',
+             'output_features_1', 'output_features_2', 'output_1'])
         tf.train.write_graph(trained_graph, arguments.output, 'trained_graph.pb', as_text=False)
         # tf.train.write_graph(trained_graph, arguments.output, 'trained_graph.pbtxt', as_text=True)
 
